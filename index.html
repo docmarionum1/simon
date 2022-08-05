@@ -1,0 +1,447 @@
+<html>
+	<head>
+		<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0"/>
+		<meta name="mobile-web-app-capable" content="yes">
+		<meta name="apple-mobile-web-app-capable" content="yes">
+		<title>Simon</title>
+		<script type="text/javascript" src="/socket.io/socket.io.js"></script>
+		<script type="text/javascript" src="http://code.jquery.com/jquery-2.1.1.min.js"></script>
+		<script type="text/javascript" src="http://code.jquery.com/color/jquery.color-2.1.2.min.js"></script>
+		<link href='http://fonts.googleapis.com/css?family=Nunito' rel='stylesheet' type='text/css'>
+		<style type="text/css">
+			body {
+				font-family: 'Nunito', sans-serif;
+				font-size: 12vw;
+
+				-webkit-touch-callout: none;
+			    -webkit-user-select: none;
+			    -khtml-user-select: none;
+			    -moz-user-select: none;
+			    -ms-user-select: none;
+			    user-select: none;
+
+			    margin: 0px;
+
+			    height: 120%;
+			}
+
+			#top {
+				position: fixed;
+				width: 100%;
+				text-align: center;
+			}
+
+			#center {
+				position: fixed;
+				width: 100%;
+				text-align: center; 
+				top: 42%;
+			}
+
+			#bottom {
+				position: fixed;
+				width: 100%;
+				text-align: center;  
+				top: 75%;
+			}
+
+			#button {
+				width: 100%;
+				height: 100%;
+				position: fixed;
+				top: 0;
+				display: none;
+				z-index: 2;
+			}
+
+			#password {
+				display:none;
+				position: fixed;
+				width: 100%;
+				text-align: center;
+				top: 90%;
+				z-index: 1;
+				-webkit-text-stroke: 3px white;
+			}
+
+			#password_buttons {
+				width: 100%;
+				height: 90%;
+				position: fixed;
+				display: none;
+			}
+
+			.password_button {
+				width: 50%;
+				height: 50%;
+				float: left;
+			}
+
+			#title {
+				position: fixed;
+				width: 100%;
+				text-align: center;
+				font-size: 20vw;
+				font-weight: bold;
+				letter-spacing: -7;
+				top: 10%;
+			}
+
+			.menuButton {
+				width: 100%;
+				text-align: center;
+				position: fixed;
+			}
+
+			.menuButton span {
+				padding: 10px;
+				border-radius: 10px;
+			}
+
+			#newGameButton {
+				top: 50%;
+			}
+
+			#newGameButton span {
+				background-color: green;
+			}
+
+			#joinGameButton {
+				top: 75%;
+			}
+
+			#joinGameButton span {
+				background-color: orange;
+			}
+
+			#desktopSplash {
+				display: none;
+				z-index: 100;
+				text-align: center;
+			}
+		</style>
+		<script type="text/javascript">
+			/*window.onerror = function(error) {
+			    alert(error);
+			};*/
+
+			var supportsVibrate = "vibrate" in navigator;
+			var supportsAudio;
+
+			try {
+				new webkitAudioContext();
+				supportsAudio = true;
+			} catch (e) {
+				supportsAudio = false;
+			}
+
+			var sounds = {
+				"blue": 200,
+				"yellow": 250,
+				"red": 300,
+				"green": 400,
+				"orange": 450,
+				"yellow": 500,
+				"purple": 550,
+				"silver": 600,
+				"lime": 650,
+				"aqua": 700,
+				"fuchsia": 750
+			};
+
+			var password_length = 5;
+			var password_button_order = ["red", "green", "blue", "orange"];
+
+			function flash(color) {
+				$("body").animate(
+				{"background-color": "white"}, 
+				50, "linear", 
+				function(){ 
+					$("body").animate(
+						{"background-color": "black"}, 
+						50, "linear",
+						function() {
+							$("body").animate({"background-color": color}, 50);
+					});
+				});
+			}
+
+			function lightUp(color, sound, socket) {
+				if (supportsVibrate) {navigator.vibrate(1000);}
+				$("body").animate(
+					{"background-color": "white"}, 
+					50, "linear", 
+					function(){ 
+						setTimeout(function() {
+							if (supportsAudio) {
+								try { sound.stop(0); } catch(e){}
+							}
+							if (supportsVibrate) {navigator.vibrate(0);}
+							$("body").animate(
+								{"background-color": color}, 50, "linear",
+								function() {
+									socket.emit('lightUpFinish');
+							});
+						}, 400);
+				});
+			}
+
+			function playSound(context, freq) {
+				if (supportsAudio) {
+					var osc = context.createOscillator();
+					osc.connect(context.destination);
+					osc.frequency.value = freq;
+					osc.type = "square";
+					osc.start(0);
+					return osc;
+				} else {
+					return null;
+				}
+			}
+
+			function displayMessage(message) {
+				$(message.location).html(message.message);
+				$(message.location).fadeTo(0,1);
+				if (message.fade) {
+					$(message.location).fadeTo(message.fade,0);
+				}
+			}
+
+			function displayPassword(password) {
+				console.log(password);
+				var password_squares = $("#password .square");
+				for (var i = 0; i < password_length; i++) {
+					if (i < password.length) {
+						$(password_squares[i]).css("color", password[i]);
+					} else {
+						$(password_squares[i]).css("color", "black");
+					}
+				}
+			}
+
+			function decodePassword(code) {
+				var colors = $.map(("00000"+code.toString(4)).slice(-5).split(''), function(n) {
+					return password_button_order[parseInt(n)];
+				});
+
+				return colors;
+			}
+
+			function encodePassword(colors) {
+				var s = $.map(colors, function(n) {
+					return password_button_order.indexOf(n);
+				}).join("");
+				return parseInt(s, 4);
+			}
+
+			function clearMessages() {
+				var messages = ["#top", "#center", "#bottom"];
+
+				for (var i = 0; i < messages.length; i++) {
+					$(messages[i]).html("");
+					$(messages[i]).fadeTo(0,0);
+				}
+			}
+
+			$(function() {
+				if(!(/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent))) {
+					//Not mobile, FREAK OUT
+					$("#desktopSplash").css("display", "block");
+					$("#menu").css("display", "none");
+					$("body").css("height", "100%");
+				}
+				window.scrollTo(0, 1);
+				history.pushState('', 'Simon', "#menu");
+				var audio_context = new webkitAudioContext()
+				var sound;
+				var color;
+				var password = [];
+				var game_state = null;
+
+
+				var socket = io();
+				socket.on('join', function(msg) {
+					color = msg.color;
+					password = decodePassword(msg.password);
+					displayPassword(password);
+					game_state = "stopped";
+
+					$("body").css({"background-color": color});
+					$("#button").css({"display": "block"});
+					$("#password").css("display", "block");
+					$("#password_buttons").css("display", "none");
+				});
+
+				socket.on('message', function(message) {
+					displayMessage(message);
+				});
+
+				socket.on('lightUp', function() {
+					lightUp(color, playSound(audio_context, sounds[color]), socket);
+				});
+
+				socket.on('flash', function() {
+					flash(color);
+				});
+
+				socket.on('start', function() {
+					$("#password").css("display", "none");
+					game_state = "playing";
+				});
+
+				socket.on('gameOver', function() {
+					$("#password").css("display", "block");
+					game_state = "stopped";
+				});
+
+				$(window).on('hashchange', function(event) {
+					var u = event.originalEvent.newURL;
+				  	console.log(u);
+				  	if (game_state == "playing") {
+				  		return;
+				  	}
+				  	if (u.indexOf("join") == -1 && u.indexOf("game") == -1 && u.indexOf("new") == -1) {
+				  		//Go back to menu
+				  		$("#menu").css("display", "block");
+						$("#password").css("display", "none");
+						$("#password_buttons").css("display", "none");
+						$("body").css({"background-color": "white"});
+						$("#button").css({"display": "none"});
+						clearMessages();
+
+						if (game_state == "stopped") {
+							game_state = null;
+							socket.emit("leave");
+						}
+
+				  	}
+				});
+
+
+				$("#button").on("touchstart", function() {
+					if (supportsAudio) {
+						try { sound.stop(0);} catch(e){}
+						sound = playSound(audio_context, sounds[color]);
+					}
+					$("body").css("background-color", "white");
+					socket.emit("mousedown");
+				});
+
+				$("#button").on("touchend", function() {
+					$("body").css("background-color", color);
+					if (supportsAudio) {
+						try { sound.stop(0);} catch(e){}
+					}
+					socket.emit("mouseup");
+				});
+
+				//Set up Menu
+				$("#newGameButton").on("click", function() {
+					$("#menu").css("display", "none");
+					socket.emit("newGame");
+					history.pushState('', 'Simon', "#game");
+				});
+
+				$("#joinGameButton").on("click", function() {
+					password = [];
+					displayPassword(password);
+					$("#menu").css("display", "none");
+					$("#password").css("display", "block");
+					$("#password_buttons").css("display", "block");
+					history.pushState('', 'Simon', "#join");
+				});
+
+
+
+				socket.on('clearPassword', function() {
+					if (supportsVibrate) {navigator.vibrate(200);}
+					password = [];
+					displayPassword(password);
+				});
+
+				
+				//Set up Join game password entry
+				//var password = [];
+				function createButtonHandler(button, button_color) {
+					var button_sound;
+
+					$(button).on("touchstart", function() {
+						if (supportsAudio) {
+							try { button_sound.stop(0);} catch(e){}
+							button_sound = playSound(audio_context, sounds[button_color]);
+
+							setTimeout(function() { 
+								try { button_sound.stop(0);} catch(e){}
+							}, 50);
+						}
+
+						$(button).css("background-color", "white");
+
+						if (supportsVibrate) {navigator.vibrate(50);}
+
+						password.push(button_color);
+						displayPassword(password);
+						if (password.length == 5) {
+							socket.emit('joinGame', encodePassword(password));
+						}
+					});
+
+					$(button).on("touchend", function() {
+						$(button).css("background-color", button_color);
+					});
+				}
+				var password_buttons = $("#password_buttons .password_button");
+				for (var i = 0; i < password_button_order.length; i++) {
+					createButtonHandler(password_buttons[i], password_button_order[i]);
+				}
+
+			});
+		</script>
+		<body oncontextmenu="return false;">
+			<div id="desktopSplash">
+				<span>
+					<span style="letter-spacing:-5">Co-Op</span><br/>
+					<div style="letter-spacing:-15">
+						<span style="color: blue;">S</span>
+						<span style="color: red;">i</span>
+						<span style="color: green;">m</span>
+						<span style="color: orange;">o</span>
+						<span style="color: purple;">n</span>
+					</div>
+				</span>
+				<span style="font-size:2vw">Open on your mobile browser to play!</span>
+			</div>
+			<div id="menu">
+				<span id="title">
+					<span style="letter-spacing:-5">Co-Op</span><br/>
+					<div>
+						<span style="color: blue;">S</span>
+						<span style="color: red;">i</span>
+						<span style="color: green;">m</span>
+						<span style="color: orange;">o</span>
+						<span style="color: purple;">n</span>
+					</div>
+				</span>
+				<div id="newGameButton" class="menuButton"><span>New</span></div>
+				<div id="joinGameButton" class="menuButton"><span>Join</span></div>
+			</div>
+			<div id="password_buttons">
+				<div class="password_button" style="background-color: red"></div>
+				<div class="password_button" style="background-color: green"></div>
+				<div class="password_button" style="background-color: blue"></div>
+				<div class="password_button" style="background-color: orange"></div>
+			</div>
+			<span id="password">
+				<span class="square">■</span>
+				<span class="square">■</span>
+				<span class="square">■</span>
+				<span class="square">■</span>
+				<span class="square">■</span>
+			</span>
+			<div id="button"></div>
+			<span id="top"></span>
+			<span id="center"></span>
+			<span id="bottom"></span>
+		</body>
+	</head>
+</html>

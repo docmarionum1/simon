@@ -1,0 +1,8 @@
+{
+  "name": "simon",
+  "version": "0.0.1",
+  "description": "Co-op Simon Game",
+  "dependencies": {
+    "express": "^4.10.5"
+  }
+}
